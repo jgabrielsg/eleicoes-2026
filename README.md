@@ -1,6 +1,8 @@
 
 # Simulador de Sistemas Eleitorais (Eleições 2026)
 
+### [ACESSO AO SITE](https://simulador-eleitoral-2026.netlify.app)
+
 Este projeto é uma plataforma web desenvolvida em SvelteKit e TailwindCSS com o objetivo de analisar e comparar o impacto de diferentes modelos de votação e contagem de votos na escolha de um único cargo executivo (Presidente da República). 
 
 A aplicação permite visualizar na prática teorias da ciência política (como o "Efeito Spoiler" e a Lei de Duverger), evidenciando como o resultado de uma mesma eleição e a lista de candidatos vencedores podem mudar drasticamente apenas alterando as regras matemáticas do sistema de votação.
