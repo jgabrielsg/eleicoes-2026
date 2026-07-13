@@ -68,14 +68,13 @@ export async function POST() {
 			});
 		}
 
-		// Gravação otimizada em lote no JSON local para evitar overhead de I/O em loop
-		const totalVotos = salvarVotosEmMassa(novosVotos);
+		// Gravação otimizada em lote no Supabase
+		await salvarVotosEmMassa(novosVotos);
 
 		return json({
 			sucesso: true,
 			mensagem: 'Seeding concluído! 5.000 votos adicionados.',
-			votosAdicionados: 5000,
-			totalVotos
+			votosAdicionados: 5000
 		});
 	} catch (err) {
 		return json({ erro: 'Falha ao executar rotina de seed: ' + err.message }, { status: 500 });

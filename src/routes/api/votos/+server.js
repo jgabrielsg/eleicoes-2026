@@ -119,8 +119,8 @@ export async function POST({ request, cookies }) {
 			return json({ erro: erroValidacao }, { status: 400 });
 		}
 
-		// 3. Salvar no banco JSON (db.js)
-		const totalVotos = salvarVoto(payload);
+		// 3. Salvar no banco Supabase (db.js)
+		await salvarVoto(payload);
 
 		// 4. Definir Cookie HTTP-only de segurança (expiração de 1 ano)
 		cookies.set('voted', 'true', {
@@ -131,7 +131,7 @@ export async function POST({ request, cookies }) {
 			secure: false // local dev (localhost)
 		});
 
-		return json({ sucesso: true, totalVotos });
+		return json({ sucesso: true });
 	} catch (err) {
 		return json({ erro: 'Erro ao processar submissão: ' + err.message }, { status: 500 });
 	}
@@ -143,7 +143,7 @@ export async function POST({ request, cookies }) {
  */
 export async function GET() {
 	// 1. Ler todos os votos (Apenas uma leitura por requisição para evitar gargalos)
-	const votosList = obterTodosOsVotos();
+	const votosList = await obterTodosOsVotos();
 	const totalVotos = votosList.length;
 
 	// 2. Medir tempo de processamento computacional com console.time
@@ -163,7 +163,7 @@ export async function GET() {
  * @type {import('./$types').RequestHandler}
  */
 export async function DELETE({ cookies }) {
-	limparVotos();
+	await limparVotos();
 	cookies.delete('voted', { path: '/' });
 	return json({ sucesso: true, mensagem: 'Todos os votos foram limpos e cookie expirado.' });
 }

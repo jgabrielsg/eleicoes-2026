@@ -1,90 +1,102 @@
-import fs from 'fs';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_SECRET_KEY } from '$env/static/private';
 
-// Resolve o caminho do arquivo votos.json dentro da pasta do servidor
-const filePath = path.resolve('src/lib/server/votos.json');
+// Inicializa o cliente do Supabase com credenciais privadas de servidor
+const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
 /**
- * Garante a criação do diretório e do arquivo JSON de votos se não existirem
+ * Retorna todos os votos registrados no Supabase (coluna JSONB 'payload')
+ * @returns {Promise<Array<any>>}
  */
-function inicializarDb() {
+export async function obterTodosOsVotos() {
 	try {
-		if (!fs.existsSync(filePath)) {
-			const dirPath = path.dirname(filePath);
-			if (!fs.existsSync(dirPath)) {
-				fs.mkdirSync(dirPath, { recursive: true });
+		let todosVotos = [];
+		let hasMore = true;
+		let from = 0;
+		const step = 1000;
+
+		while (hasMore) {
+			const { data, error } = await supabase
+				.from('votos')
+				.select('payload')
+				.range(from, from + step - 1);
+
+			if (error) {
+				console.error('Erro ao obter votos do Supabase:', error);
+				return todosVotos;
 			}
-			fs.writeFileSync(filePath, JSON.stringify([]), 'utf-8');
+
+			if (data && data.length > 0) {
+				todosVotos = todosVotos.concat(data.map(row => row.payload));
+				from += step;
+				if (data.length < step) {
+					hasMore = false;
+				}
+			} else {
+				hasMore = false;
+			}
 		}
+		return todosVotos;
 	} catch (err) {
-		console.error('Falha ao inicializar o arquivo de banco de dados:', err);
-	}
-}
-
-// Inicialização imediata
-inicializarDb();
-
-/**
- * Retorna todos os votos registrados no arquivo JSON
- * @returns {Array<any>}
- */
-export function obterTodosOsVotos() {
-	try {
-		inicializarDb();
-		const data = fs.readFileSync(filePath, 'utf-8');
-		return JSON.parse(data || '[]');
-	} catch (err) {
-		console.error('Erro ao ler votos do arquivo JSON:', err);
+		console.error('Erro de conexão ao consultar o Supabase:', err);
 		return [];
 	}
 }
 
 /**
- * Salva um novo voto no arquivo JSON
+ * Salva um novo voto no Supabase
  * @param {any} voto 
- * @returns {number} quantidade total de votos
+ * @returns {Promise<boolean>}
  */
-export function salvarVoto(voto) {
+export async function salvarVoto(voto) {
 	try {
-		inicializarDb();
-		const votosAtuais = obterTodosOsVotos();
-		votosAtuais.push(voto);
-		fs.writeFileSync(filePath, JSON.stringify(votosAtuais, null, 2), 'utf-8');
-		return votosAtuais.length;
-	} catch (err) {
-		console.error('Erro ao persistir voto no arquivo JSON:', err);
-		throw err;
-	}
-}
-
-/**
- * Salva múltiplos votos em lote (otimização de I/O para seeding/simulação)
- * @param {Array<any>} novosVotos 
- * @returns {number} quantidade total de votos
- */
-export function salvarVotosEmMassa(novosVotos) {
-	try {
-		inicializarDb();
-		const votosAtuais = obterTodosOsVotos();
-		const votosAtualizados = votosAtuais.concat(novosVotos);
-		fs.writeFileSync(filePath, JSON.stringify(votosAtualizados, null, 2), 'utf-8');
-		return votosAtualizados.length;
-	} catch (err) {
-		console.error('Erro ao persistir votos em massa no arquivo JSON:', err);
-		throw err;
-	}
-}
-
-/**
- * Limpa todos os votos salvos (reseta o banco de dados)
- * @returns {boolean}
- */
-export function limparVotos() {
-	try {
-		fs.writeFileSync(filePath, JSON.stringify([]), 'utf-8');
+		const { error } = await supabase.from('votos').insert([{ payload: voto }]);
+		if (error) {
+			console.error('Erro ao persistir voto no Supabase:', error);
+			throw error;
+		}
 		return true;
 	} catch (err) {
-		console.error('Erro ao resetar arquivo JSON:', err);
+		console.error('Erro ao salvar voto no Supabase:', err);
+		throw err;
+	}
+}
+
+/**
+ * Salva múltiplos votos em lote (otimização de inserção em lote para simulações)
+ * @param {Array<any>} novosVotos 
+ * @returns {Promise<boolean>}
+ */
+export async function salvarVotosEmMassa(novosVotos) {
+	try {
+		const registros = novosVotos.map(voto => ({ payload: voto }));
+		const { error } = await supabase.from('votos').insert(registros);
+		if (error) {
+			console.error('Erro ao inserir votos em massa no Supabase:', error);
+			throw error;
+		}
+		return true;
+	} catch (err) {
+		console.error('Erro ao salvar lote de votos no Supabase:', err);
+		throw err;
+	}
+}
+
+/**
+ * Deleta todos os registros de votos da tabela do Supabase
+ * @returns {Promise<boolean>}
+ */
+export async function limparVotos() {
+	try {
+		// Executa um delete incondicional baseando-se no campo payload diferente de nulo
+		const { error } = await supabase.from('votos').delete().neq('payload', null);
+		if (error) {
+			console.error('Erro ao limpar votos no Supabase:', error);
+			throw error;
+		}
+		return true;
+	} catch (err) {
+		console.error('Erro ao resetar votos no Supabase:', err);
 		throw err;
 	}
 }
