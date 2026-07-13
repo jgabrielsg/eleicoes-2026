@@ -64,7 +64,8 @@ export async function POST() {
 				voto_simples: randomVotoSimples,
 				voto_aprovacao: randomVotoAprovacao,
 				voto_rank: randomVotoRank,
-				voto_nota: randomVotoNota
+				voto_nota: randomVotoNota,
+				device_hash: 'seed_device_' + Math.random().toString(36).substring(2) + '_' + i
 			});
 		}
 

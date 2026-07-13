@@ -10,6 +10,18 @@ const UFS = new Set([
 ]);
 const CANDIDATO_IDS = new Set(CANDIDATOS.map(c => c.id));
 
+// Cache em memória para os fingerprints de navegadores (Rate Limit de 10 minutos)
+const cacheFingerprints = new Map();
+
+function limparCacheExpirado() {
+	const limiteTempo = Date.now() - 10 * 60 * 1000;
+	for (const [hash, timestamp] of cacheFingerprints.entries()) {
+		if (timestamp < limiteTempo) {
+			cacheFingerprints.delete(hash);
+		}
+	}
+}
+
 /**
  * Validação estrita do payload do voto para prevenir dados corrompidos na apuração
  * @param {any} payload 
@@ -20,7 +32,12 @@ function validarVoto(payload) {
 		return 'Corpo da requisição vazio ou inválido.';
 	}
 
-	const { uf, voto_simples, voto_aprovacao, voto_rank, voto_nota } = payload;
+	const { uf, voto_simples, voto_aprovacao, voto_rank, voto_nota, device_hash } = payload;
+
+	// 0. Validar Assinatura do Dispositivo
+	if (!device_hash || typeof device_hash !== 'string' || device_hash.length < 16) {
+		return 'Assinatura do dispositivo (fingerprint) inválida ou ausente.';
+	}
 
 	// 1. Validar Estado (UF)
 	if (!uf || !UFS.has(uf)) {
@@ -100,7 +117,7 @@ function validarVoto(payload) {
 }
 
 /**
- * Endpoint POST: Registra o voto com rate limiting (cookies) e validação manual estrita
+ * Endpoint POST: Registra o voto com rate limiting (cookies + fingerprint) e validação manual estrita
  * @type {import('./$types').RequestHandler}
  */
 export async function POST({ request, cookies }) {
@@ -119,10 +136,28 @@ export async function POST({ request, cookies }) {
 			return json({ erro: erroValidacao }, { status: 400 });
 		}
 
-		// 3. Salvar no banco Supabase (db.js)
+		// 3. Rate Limit por Fingerprint Hash (bloqueia envio múltiplo em menos de 10 minutos)
+		limparCacheExpirado();
+		const hash = payload.device_hash;
+		if (cacheFingerprints.has(hash)) {
+			const ultimoVotoTimestamp = cacheFingerprints.get(hash);
+			const tempoPassado = Date.now() - ultimoVotoTimestamp;
+			const tempoRestanteSegundos = Math.ceil((10 * 60 * 1000 - tempoPassado) / 1000);
+			if (tempoRestanteSegundos > 0) {
+				return json(
+					{ erro: `Seu dispositivo já registrou um voto recentemente. Aguarde ${tempoRestanteSegundos} segundos para tentar de novo.` },
+					{ status: 429 } // Too Many Requests
+				);
+			}
+		}
+
+		// 4. Salvar no banco Supabase (db.js)
 		await salvarVoto(payload);
 
-		// 4. Definir Cookie HTTP-only de segurança (expiração de 1 ano)
+		// Armazena no cache temporário
+		cacheFingerprints.set(hash, Date.now());
+
+		// 5. Definir Cookie HTTP-only de segurança (expiração de 1 ano)
 		cookies.set('voted', 'true', {
 			path: '/',
 			httpOnly: true,
@@ -159,11 +194,14 @@ export async function GET() {
 }
 
 /**
- * Endpoint DELETE: Limpa todos os votos do JSON e apaga o cookie do cliente
+ * Endpoint DELETE: Apaga o cookie do cliente e remove seu fingerprint do cache temporário
  * @type {import('./$types').RequestHandler}
  */
-export async function DELETE({ cookies }) {
-	await limparVotos();
+export async function DELETE({ url, cookies }) {
 	cookies.delete('voted', { path: '/' });
-	return json({ sucesso: true, mensagem: 'Todos os votos foram limpos e cookie expirado.' });
+	const hash = url.searchParams.get('device_hash');
+	if (hash) {
+		cacheFingerprints.delete(hash);
+	}
+	return json({ sucesso: true, mensagem: 'Voto redefinido com sucesso.' });
 }

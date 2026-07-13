@@ -10,6 +10,9 @@
 	// Variável reativa para o painel de detalhes interativo do Colégio Eleitoral
 	let ufSelecionada = $state(null);
 
+	// Feedback visual do link de compartilhamento copiado
+	let linkCopiado = $state(false);
+
 	// Mapa de nomes completos dos estados brasileiros
 	const NOMES_UFS = {
 		AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
@@ -23,6 +26,27 @@
 	// Pontuação máxima derivada para normalização gráfica
 	let maxScore = $derived(dados?.resultados?.score?.contagem ? Math.max(...Object.values(dados.resultados.score.contagem), 1) : 1);
 
+	// Manchete dinâmica estilo Data Storytelling (FiveThirtyEight) analisando os desfechos
+	let analiseSpoiler = $derived.by(() => {
+		if (!dados) return '';
+		const ms = dados.resultados.maioriaSimples.vencedor;
+		const av = dados.resultados.aprovacao.vencedor;
+		const irv = dados.resultados.votoAlternativo.vencedor;
+		const coll = dados.resultados.colegio.vencedor;
+
+		if (!ms) return '';
+
+		if (ms.id !== av.id) {
+			return `🚨 **Alerta de Efeito Spoiler!** Embora **${ms.nome} (${ms.partido})** lidere no modelo tradicional de maioria simples (primeiro turno), o sistema de **Voto por Aprovação** revela que **${av.nome} (${av.partido})** é o candidato com maior aceitabilidade consensual da população. No sistema simples, votos dispersos entre candidatos semelhantes tendem a inflar distorções.`;
+		} else if (ms.id !== irv.id) {
+			return `🔄 **Efeito de Transferência de Preferências!** O líder de maioria simples tradicional **${ms.nome} (${ms.partido})** seria derrotado no **Voto Alternativo (IRV)** por **${irv.nome} (${irv.partido})**, que angariou maior apoio à medida que candidatos menos votados foram eliminados e as segundas preferências transferidas.`;
+		} else if (ms.id !== coll.id) {
+			return `🇺🇸 **Distorção Federativa!** Embora **${ms.nome} (${ms.partido})** vença na contagem popular nacional simples, o sistema do **Colégio Eleitoral** (estilo norte-americano) elegeria **${coll.nome} (${coll.partido})**, ilustrando o impacto desproporcional da distribuição populacional por estados.`;
+		} else {
+			return `✅ **Consenso Consolidado!** Nesta simulação, o candidato **${ms.nome} (${ms.partido})** lidera de forma consensual sob múltiplas métricas de apuração (Maioria Simples e Voto por Aprovação), demonstrando uma base de apoio ampla e sólida de primeiro e segundo turnos.`;
+		}
+	});
+
 	// Carrega dados da API
 	async function carregarDados() {
 		carregando = true;
@@ -31,7 +55,6 @@
 			const res = await fetch('/api/votos');
 			if (!res.ok) throw new Error('Não foi possível obter os dados da apuração.');
 			dados = await res.json();
-			// Limpa seleção se os dados forem recarregados
 			ufSelecionada = null;
 		} catch (err) {
 			erro = err.message;
@@ -40,19 +63,69 @@
 		}
 	}
 
-	// Limpa dados de votos
-	async function resetarVotos() {
-		if (!confirm('Deseja realmente excluir todos os votos em memória e redefinir a simulação?')) return;
+	// Gera fingerprint temporário
+	async function gerarDeviceHash() {
+		try {
+			const info = [
+				navigator.userAgent,
+				screen.width.toString(),
+				screen.height.toString(),
+				navigator.language || ''
+			].join('|');
+
+			const encoder = new TextEncoder();
+			const data = encoder.encode(info);
+			const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+		} catch (err) {
+			console.error('Falha ao gerar fingerprint:', err);
+			return localStorage.getItem('device_fingerprint_fallback') || '';
+		}
+	}
+
+	// Reseta voto local e remove rate-limiting do cookie/fingerprint no servidor
+	async function resetarVotoVotante() {
+		if (!confirm('Deseja realmente resetar seu voto para votar novamente?')) return;
 		redefinindo = true;
 		try {
-			const res = await fetch('/api/votos', { method: 'DELETE' });
-			if (!res.ok) throw new Error('Erro ao apagar dados do servidor.');
+			const hash = await gerarDeviceHash();
+			const res = await fetch(`/api/votos?device_hash=${hash}`, { method: 'DELETE' });
+			if (!res.ok) throw new Error('Erro ao processar reset de voto no servidor.');
 			localStorage.removeItem('ja_votou_simulador');
-			await carregarDados();
+			// Redireciona o usuário para votar novamente
+			window.location.href = '/votar';
 		} catch (err) {
 			alert(err.message);
 		} finally {
 			redefinindo = false;
+		}
+	}
+
+	// Dispara compartilhamento cívico/viral
+	async function compartilharSimulador() {
+		const textoShare = 'Acabei de testar o Simulador Matemático de Eleições! Veja como as regras mudam os vencedores. Simule aqui: ' + window.location.origin;
+		
+		if (navigator.share) {
+			try {
+				await navigator.share({
+					title: 'Simulador de Sistemas Eleitorais 2026',
+					text: 'Veja como a escolha da regra de apuração redefine o vencedor nacional!',
+					url: window.location.origin
+				});
+			} catch (err) {
+				console.log('Compartilhamento cancelado ou falhou:', err);
+			}
+		} else {
+			try {
+				await navigator.clipboard.writeText(textoShare);
+				linkCopiado = true;
+				setTimeout(() => {
+					linkCopiado = false;
+				}, 3000);
+			} catch (err) {
+				alert('Copie o link manualmente: ' + window.location.origin);
+			}
 		}
 	}
 
@@ -80,7 +153,7 @@
 </script>
 
 <svelte:head>
-	<title>Simulador Eleitoral - Dashboard 2026</title>
+	<title>Simulador Eleitoral - Dashboard de Apuração</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -123,11 +196,19 @@
 
 				<button 
 					type="button" 
-					onclick={resetarVotos}
+					onclick={compartilharSimulador}
+					class="py-2.5 px-4 bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-400 border border-indigo-900/30 font-semibold rounded-xl text-xs transition-all flex items-center gap-1.5"
+				>
+					📢 {linkCopiado ? 'Link Copiado!' : 'Compartilhar'}
+				</button>
+
+				<button 
+					type="button" 
+					onclick={resetarVotoVotante}
 					disabled={redefinindo || carregando}
 					class="py-2.5 px-4 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/30 font-semibold rounded-xl text-xs transition-all"
 				>
-					{redefinindo ? 'Redefinindo...' : 'Resetar Eleição'}
+					{redefinindo ? 'Resetando...' : 'Resetar voto'}
 				</button>
 			</div>
 		</header>
@@ -155,7 +236,7 @@
 				</div>
 				<div class="max-w-md">
 					<h2 class="text-2xl font-bold text-white mb-2">Simulador sem Dados</h2>
-					<p class="text-slate-400 text-xs leading-relaxed">
+					<p class="text-slate-400 text-xs leading-relaxed font-normal">
 						Nenhuma cédula inteligente de 12 candidatos foi depositada na urna em memória ainda. Registre seu voto ou adicione alguns votos simulados para visualizar as distorções nos sistemas democráticos.
 					</p>
 				</div>
@@ -165,8 +246,6 @@
 			</div>
 		{:else}
 			<!-- Resultados -->
-
-			<!-- ANÁLISE GERAL DO PAINEL -->
 			{@const MSWinner = dados.resultados.maioriaSimples.vencedor}
 			{@const AVWinner = dados.resultados.aprovacao.vencedor}
 			{@const IRVWinner = dados.resultados.votoAlternativo.vencedor}
@@ -175,26 +254,15 @@
 			{@const StarWinner = dados.resultados.star.vencedor}
 			{@const CollWinner = dados.resultados.colegio.vencedor}
 
-			<!-- Analisador do Efeito Spoiler e Distorções -->
-			<section class="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-sm flex flex-col gap-3">
-				<h2 class="text-base font-bold text-white flex items-center gap-2">
-					<span>🧠</span> Análise de Cenários Democráticos (Total: {dados.totalVotos} {dados.totalVotos === 1 ? 'voto' : 'votos'})
-				</h2>
-				
-				<div class="text-xs text-slate-350 leading-relaxed flex flex-col gap-2 font-normal">
-					<p>
-						{#if MSWinner?.id !== AVWinner?.id || MSWinner?.id !== IRVWinner?.id || MSWinner?.id !== CollWinner?.id}
-							<span class="text-amber-400 font-bold">🚨 Efeito de Divisão de Votos / Divergência de Regra:</span> A escolha da fórmula de contagem alterou o presidente eleito! 
-							Na Maioria Simples tradicional, o vencedor é <strong style="color: {obterCorTexto(MSWinner)}; filter: brightness(1.5) saturate(1.2);">{MSWinner.nome} ({MSWinner.partido})</strong>. 
-							Contudo, sob o Voto por Aprovação, elegeu-se <strong style="color: {obterCorTexto(AVWinner)}; filter: brightness(1.5) saturate(1.2);">{AVWinner.nome} ({AVWinner.partido})</strong>, e no Colégio Eleitoral, venceu <strong style="color: {obterCorTexto(CollWinner)}; filter: brightness(1.5) saturate(1.2);">{CollWinner.nome} ({CollWinner.partido})</strong>. 
-							Com 12 candidatos na disputa, o voto tradicional tende a dividir votos e eleger candidatos de maior rejeição, enquanto sistemas cardinal e preferencial buscam o candidato mais aceitável para o país.
-						{:else}
-							<span class="text-emerald-400 font-bold">✅ Consenso Unânime:</span> O candidato 
-							<strong style="color: {obterCorTexto(MSWinner)}; filter: brightness(1.5) saturate(1.2);">{MSWinner.nome} ({MSWinner.partido})</strong> venceu sob todas as metodologias eleitorais avaliadas. 
-							Mesmo em um cenário disperso com 12 pré-candidatos, ele conseguiu atingir a liderança em todas as contagens, revelando um forte apelo consensual nesta simulação.
-						{/if}
-					</p>
+			<!-- A MANCHETE DINÂMICA (ESTILO FIVE-THIRTY-EIGHT / DATA STORYTELLING) -->
+			<section class="bg-indigo-950/20 border border-indigo-500/20 rounded-3xl p-6 backdrop-blur-sm flex flex-col gap-2">
+				<div class="flex items-center gap-2">
+					<span class="text-indigo-400 text-xs">📰</span>
+					<span class="text-3xs font-extrabold text-indigo-400 uppercase tracking-widest">Resumo Executivo / Manchete Cívica</span>
 				</div>
+				<p class="text-xs md:text-sm text-slate-300 leading-relaxed font-medium">
+					{@html analiseSpoiler}
+				</p>
 			</section>
 
 			<!-- GRID COM OS 7 RESULTADOS - CONFIGURADO PARA GRID DE 2 COLUNAS LARGAS -->
@@ -299,38 +367,56 @@
 					</div>
 				</section>
 
-				<!-- 3. VOTO ALTERNATIVO / IRV -->
+				<!-- 3. VOTO ALTERNATIVO / IRV (RODADAS DE ELIMINAÇÃO COM FLUXO VISUAL EXPLICATIVO) -->
 				<section class="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between shadow-xl min-h-125">
 					<div>
 						<div class="flex justify-between items-start">
 							<div>
 								<h3 class="text-sm font-bold text-white">3. Voto Alternativo (IRV)</h3>
-								<p class="text-3xs text-slate-400 font-normal">Elimina o lanterna de cada turno e transfere preferências.</p>
+								<p class="text-3xs text-slate-400 font-normal">Fluxo sequencial. Elimina o lanterna e transfere preferências para sobreviventes.</p>
 							</div>
 							<span class="text-4xs px-2 py-0.5 rounded bg-slate-950 border border-slate-850 font-bold text-slate-500 uppercase">Preferencial</span>
 						</div>
 
-						<div class="my-4 flex flex-col gap-2.5 max-h-80 overflow-y-auto pr-1">
+						<div class="my-4 flex flex-col gap-3.5 max-h-80 overflow-y-auto pr-1">
 							{#each dados.resultados.votoAlternativo.rodadas as rodada}
 								{@const elim = dados.candidatos.find(c => c.id === rodada.eliminadoId)}
-								<div class="bg-slate-950/60 p-2.5 border border-slate-855 rounded-2xl flex flex-col gap-1.5 text-3xs">
-									<div class="flex justify-between text-4xs font-bold text-slate-400 border-b border-slate-900 pb-1">
-										<span>Rodada #{rodada.numero}</span>
+								<div class="bg-slate-950/60 p-3.5 border border-slate-850 rounded-2xl flex flex-col gap-2.5 text-3xs">
+									
+									<div class="flex justify-between items-center text-4xs font-extrabold text-indigo-455 border-b border-slate-900 pb-1.5 uppercase tracking-wider">
+										<span>Turno de Eliminação #{rodada.numero}</span>
 										<span>Votos Ativos: {rodada.totalVotosAtivos}</span>
 									</div>
-									<div class="grid grid-cols-4 sm:grid-cols-6 gap-1 text-center font-medium">
-										{#each dados.candidatos as c}
+									
+									<!-- Lista de Candidatos Ativos nesta Rodada (Ordenados por votos desc) -->
+									<div class="flex flex-col gap-2">
+										{#each [...dados.candidatos]
+											.filter(c => rodada.contagem[c.id] !== undefined)
+											.sort((a, b) => (rodada.contagem[b.id] || 0) - (rodada.contagem[a.id] || 0)) as c}
 											{@const votosR = rodada.contagem[c.id]}
-											<div class="p-0.5 rounded {votosR === undefined ? 'opacity-20' : ''}">
-												<span class="text-5xs block truncate" style="color: {obterCorTexto(c)}; filter: brightness(1.5) saturate(1.2);">{c.nome.split(' ')[0]}</span>
-												<span class="font-bold text-slate-200 text-4xs">{votosR === undefined ? '-' : votosR}</span>
+											{@const pctR = obterPct(votosR, rodada.totalVotosAtivos)}
+											
+											<div class="flex flex-col gap-0.5">
+												<div class="flex justify-between text-5xs font-semibold">
+													<span style="color: {obterCorTexto(c)}; filter: brightness(1.5) saturate(1.2);">
+														{c.nome} ({c.partido})
+													</span>
+													<span class="text-slate-400">{votosR} votos ({pctR}%)</span>
+												</div>
+												<div class="w-full h-1 bg-slate-950 rounded-full overflow-hidden border border-slate-900">
+													<div class="h-full rounded-full transition-all {obterClassesBarra(c)}" style="width: {pctR}%; background-color: {c.corHexadecimal};"></div>
+												</div>
 											</div>
 										{/each}
 									</div>
+
+									<!-- Caixa explicativa sobre a eliminação (storytelling) -->
 									{#if elim}
-										<div class="text-4xs text-red-450 bg-red-950/20 px-2 py-0.5 border border-red-900/10 rounded-lg flex justify-between">
-											<span>Eliminado: {elim.nome} ({elim.partido})</span>
-											<span>Votos transferidos</span>
+										<div class="text-4xs text-red-400 bg-red-950/20 px-3 py-2 border border-red-900/10 rounded-xl flex items-start gap-2 mt-1">
+											<span class="shrink-0 text-xs mt-0.5">❌</span>
+											<p class="leading-relaxed font-normal">
+												<strong>{elim.nome} ({elim.partido})</strong> obteve a menor votação ({rodada.contagem[elim.id]} votos) e foi eliminado. Seus votos foram redistribuídos (`->`) para as próximas preferências ativas nas cédulas.
+											</p>
 										</div>
 									{/if}
 								</div>
@@ -457,7 +543,7 @@
 							{@const totalStarRunoff = votesF1 + votesF2 + tiesStar}
 
 							<div class="flex flex-col gap-4 my-5 bg-slate-950/60 p-3.5 rounded-2xl border border-slate-850">
-								<div class="text-4xs font-bold text-slate-450 uppercase tracking-wide">Fase de Runoff Automático:</div>
+								<div class="text-4xs font-bold text-slate-450 uppercase tracking-wide font-sans">Fase de Runoff Automático:</div>
 								
 								<!-- Finalista 1 -->
 								<div class="flex flex-col gap-0.5">
@@ -507,7 +593,7 @@
 					</div>
 				</section>
 
-				<!-- 7. COLÉGIO ELEITORAL (INTERATIVO COM PAINEL MASTER-DETAIL) -->
+				<!-- 7. COLÉGIO ELEITORAL (INTERATIVO COM SIGLAS MINIMALISTAS E PAINEL MASTER-DETAIL) -->
 				<section class="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between shadow-xl min-h-125 xl:col-span-2">
 					<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 						
@@ -568,7 +654,7 @@
 										<button 
 											type="button"
 											onclick={() => ufSelecionada = { uf, info: estInfo, winner: ufWinner }}
-											class="p-1 rounded-lg border text-center flex flex-col gap-0.5 text-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer select-none
+											class="p-1.5 rounded-lg border text-center flex flex-col gap-0.5 text-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer select-none
 											       {estaSelecionado ? 'ring-2 ring-indigo-500 border-indigo-400' : ''}"
 											style="background-color: {ufWinner ? ufWinner.corHexadecimal + '15' : '#1e293b10'};
 											       border-color: {estaSelecionado ? '' : (ufWinner ? ufWinner.corHexadecimal + '40' : '#33415540')}"

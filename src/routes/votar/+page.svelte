@@ -1,5 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
+	import { fade, slide } from 'svelte/transition';
 
 	// Lista oficial de 12 candidatos reais à Presidência do Brasil em 2026
 	const CANDIDATOS = [
@@ -27,6 +28,15 @@
 	// Controle de Passos (0 a 4)
 	let step = $state(0);
 
+	// Gradiente de cor de fundo a cada passo para resetar a atenção visual do usuário
+	const coresFundo = [
+		'bg-slate-900/65', // Passo 0: UF
+		'bg-slate-850/65', // Passo 1: Simples
+		'bg-slate-900/65', // Passo 2: Aprovação
+		'bg-slate-800/65', // Passo 3: Pódio
+		'bg-indigo-950/25'  // Passo 4: Notas
+	];
+
 	// Dados do Eleitor
 	let selectedUf = $state('');
 	let votoSimples = $state(''); // Passo 1: Id do candidato eleito
@@ -38,8 +48,8 @@
 		rui: false, samara: false
 	});
 
-	// Passo 3: Slots de rankeamento (contém ids dos candidatos ou null)
-	let slotsRank = $state([null, null, null, null, null]);
+	// Passo 3: Slots de pódio (Top 3 de preferências: 1º, 2º e 3º lugares)
+	let slotsRank = $state([null, null, null]);
 
 	// Passo 4: Notas dadas (inicializadas com 0)
 	let votoNota = $state({
@@ -60,19 +70,51 @@
 		}
 	});
 
-	// Manipula o preenchimento dos 5 slots de preferência (Passo 3)
+	// Gera um hash anônimo e único do dispositivo baseado em variáveis do navegador
+	async function gerarDeviceHash() {
+		try {
+			const info = [
+				navigator.userAgent,
+				screen.width.toString(),
+				screen.height.toString(),
+				navigator.language || ''
+			].join('|');
+
+			const encoder = new TextEncoder();
+			const data = encoder.encode(info);
+			const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+			
+			// Converte buffer de bits para string hexadecimal
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+		} catch (err) {
+			console.error('Falha ao gerar fingerprint do dispositivo:', err);
+			let fallback = localStorage.getItem('device_fingerprint_fallback');
+			if (!fallback) {
+				fallback = Math.random().toString(36).substring(2) + Date.now().toString(36);
+				localStorage.setItem('device_fingerprint_fallback', fallback);
+			}
+			return fallback;
+		}
+	}
+
+	// Manipula o preenchimento do pódio (Passo 3: Tap-to-Rank)
 	function alternarSelecaoRank(candidateId) {
 		const idx = slotsRank.indexOf(candidateId);
 		if (idx !== -1) {
-			// Se o candidato já está ranqueado, remove-o
+			// Se o candidato já está no pódio, remove-o
 			slotsRank[idx] = null;
 		} else {
-			// Caso contrário, insere no primeiro slot disponível
+			// Caso contrário, insere no primeiro slot livre (1º, depois 2º, depois 3º)
 			const primeiroVazio = slotsRank.indexOf(null);
 			if (primeiroVazio !== -1) {
 				slotsRank[primeiroVazio] = candidateId;
 			}
 		}
+	}
+
+	function obterCandidatoRank(idx) {
+		return CANDIDATOS.find(c => c.id === slotsRank[idx]);
 	}
 
 	function limparSlot(idx) {
@@ -105,7 +147,7 @@
 
 		const aprovados = Object.keys(votoAprovacao).filter(id => votoAprovacao[id]);
 		
-		// Converte o rank de slots para array de objetos { id_candidato, posicao }
+		// Converte os slots de pódio preenchidos no formato array de objetos { id_candidato, posicao }
 		const rankArray = [];
 		slotsRank.forEach((id, index) => {
 			if (id !== null) {
@@ -119,12 +161,16 @@
 			nota: votoNota[id]
 		}));
 
+		// Adiciona o Fingerprint de segurança contra spam de bots
+		const deviceHash = await gerarDeviceHash();
+
 		const payload = {
 			uf: selectedUf,
 			voto_simples: votoSimples,
 			voto_aprovacao: aprovados,
 			voto_rank: rankArray,
-			voto_nota: notasArray
+			voto_nota: notasArray,
+			device_hash: deviceHash
 		};
 
 		try {
@@ -152,7 +198,7 @@
 	// Helpers de estilização reativa
 	function obterCorEstilo(candidato, active) {
 		const isRenan = candidato.id === 'renan';
-		const borderClass = isRenan ? 'border-slate-600' : '';
+		const borderClass = isRenan ? 'border-slate-650' : '';
 		
 		if (active) {
 			return {
@@ -170,13 +216,13 @@
 </script>
 
 <svelte:head>
-	<title>Simulador Eleitoral - Preencher Cédula 2026</title>
+	<title>Simulador Eleitoral - Cédula Acadêmica</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </svelte:head>
 
-<main class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 flex flex-col items-center justify-start p-4 md:p-8">
+<main class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 flex flex-col items-center justify-start p-4 md:p-8 relative">
 	<div class="w-full max-w-4xl flex flex-col gap-6 mt-4">
 		
 		<!-- Navegação Superior -->
@@ -184,7 +230,7 @@
 			<a href="/" class="text-xs text-slate-400 hover:text-indigo-400 transition-colors flex items-center gap-1">
 				← Voltar para a Página Inicial
 			</a>
-			<span class="text-2xs text-slate-500 font-semibold uppercase tracking-wider">Cédula Oficial 2026</span>
+			<span class="text-2xs text-slate-500 font-bold uppercase tracking-widest">Estudo Científico de Votações</span>
 		</div>
 
 		{#if jaVotou && !sucesso}
@@ -195,11 +241,11 @@
 				</div>
 				<div class="max-w-md">
 					<h2 class="text-2xl font-bold text-white mb-2">Simulação Concluída!</h2>
-					<p class="text-slate-400 text-sm">
-						Seus votos continuam salvos no banco em memória da PoC. Siga para o dashboard para analisar o resultado acumulado.
+					<p class="text-slate-450 text-xs leading-relaxed font-normal">
+						Seu dispositivo já registrou um voto no banco de dados. Siga para o painel comparativo para ver os resultados e o Efeito Spoiler.
 					</p>
 				</div>
-				<a href="/resultados" class="py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold rounded-xl text-center shadow-lg transition-all w-full max-w-xs">
+				<a href="/resultados" class="py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold rounded-xl text-center shadow-lg transition-all w-full max-w-xs text-xs uppercase tracking-wider">
 					Ver Dashboard de Resultados
 				</a>
 			</div>
@@ -211,52 +257,40 @@
 				</div>
 				<div class="max-w-md">
 					<h2 class="text-3xl font-extrabold text-white mb-2">Cédula Processada!</h2>
-					<p class="text-slate-350 text-sm">
-						Sua cédula foi armazenada com sucesso. Analise como sua escolha muda de posição dependendo do algoritmo empregado.
+					<p class="text-slate-350 text-xs leading-relaxed font-normal">
+						Seus dados foram validados e inseridos no Supabase. O fingerprint de segurança do navegador foi registrado com sucesso.
 					</p>
 				</div>
-				<a href="/resultados" class="py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-center shadow-lg transition-all w-full max-w-xs">
+				<a href="/resultados" class="py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-center shadow-lg transition-all w-full max-w-xs text-xs uppercase tracking-wider">
 					Visualizar Resultados
 				</a>
 			</div>
 		{:else}
-			<!-- Card Principal do Wizard -->
-			<div class="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 md:p-8 backdrop-blur-md flex flex-col gap-6 shadow-2xl relative">
+			<!-- Card Principal do Wizard com Transição de Cor de Fundo Reativa -->
+			<div class="border border-slate-800 rounded-3xl p-5 md:p-8 backdrop-blur-md flex flex-col gap-6 shadow-2xl relative transition-all duration-500 {coresFundo[step]}">
 				
-				<!-- Progresso Stepper -->
-				<div class="flex items-center justify-between border-b border-slate-800 pb-4">
-					<div class="flex items-center gap-1.5">
-						{#each Array(5) as _, i}
-							<div class="flex items-center">
-								<div 
-									class="w-6 h-6 rounded-full flex items-center justify-center text-3xs font-extrabold transition-all border
-									{step === i ? 'bg-indigo-600 border-indigo-500 text-white ring-4 ring-indigo-500/20' : 
-									 step > i ? 'bg-slate-800 border-slate-700 text-indigo-400' : 'bg-slate-950 border-slate-800 text-slate-600'}"
-								>
-									{i}
-								</div>
-								{#if i < 4}
-									<div class="w-4 sm:w-8 h-0.5 {step > i ? 'bg-indigo-500/50' : 'bg-slate-800'}"></div>
-								{/if}
-							</div>
-						{/each}
+				<!-- Progresso Stepper (Indicador Preenchido Progressivamente) -->
+				<div class="flex flex-col gap-2.5 border-b border-slate-800 pb-4">
+					<div class="flex justify-between items-center text-3xs font-extrabold uppercase tracking-widest text-slate-500">
+						<span>Etapa {step} de 4</span>
+						<span>{Math.round((step / 4) * 100)}% concluído</span>
 					</div>
-					<div class="text-3xs font-extrabold uppercase tracking-widest text-slate-500">
-						Etapa {step} de 4
+					<div class="w-full h-1 bg-slate-950 rounded-full overflow-hidden border border-slate-850/60">
+						<div class="h-full bg-indigo-500 transition-all duration-500 rounded-full" style="width: {(step / 4) * 100}%"></div>
 					</div>
 				</div>
 
-				<!-- Corpo Dinâmico por Passo -->
+				<!-- Corpo Dinâmico por Passo com Transição Svelte -->
 				<div class="min-h-120 flex flex-col justify-between gap-6">
 
 					<!-- PASSO 0: SELEÇÃO DA UF -->
 					{#if step === 0}
-						<div class="flex flex-col gap-4 max-w-xl mx-auto w-full py-8">
+						<div in:fade={{ duration: 250 }} out:fade={{ duration: 150 }} class="flex flex-col gap-4 max-w-xl mx-auto w-full py-8">
 							<div class="text-center">
-								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Passo Inicial</span>
+								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Origem Cívica</span>
 								<h2 class="text-2xl md:text-3xl font-bold text-white mt-1">Selecione o seu estado</h2>
-								<p class="text-xs text-slate-400 mt-2 leading-relaxed">
-									Seu estado (UF) servirá para a simulação do **Colégio Eleitoral** nacional, onde cada região brasileira carrega um peso representativo.
+								<p class="text-xs text-slate-400 mt-2 leading-relaxed italic">
+									*O Colégio Eleitoral estadual distribui delegados baseados na população de cada estado. Selecione sua região para simular este cálculo.*
 								</p>
 							</div>
 
@@ -275,14 +309,14 @@
 							</div>
 						</div>
 
-					<!-- PASSO 1: MAIORIA SIMPLES (GRID 2x2 ou 3x4) -->
+					<!-- PASSO 1: MAIORIA SIMPLES -->
 					{:else if step === 1}
-						<div class="flex flex-col gap-4">
+						<div in:fade={{ duration: 250 }} out:fade={{ duration: 150 }} class="flex flex-col gap-4">
 							<div>
 								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Maioria Simples</span>
 								<h2 class="text-xl md:text-2xl font-bold text-white mt-1">Voto Único de Primeiro Turno</h2>
-								<p class="text-xs text-slate-400 mt-1 leading-relaxed">
-									Selecione **apenas um** candidato. Este é o método tradicional que decide eleições de um turno e fornece a votação simples estadual do Colégio Eleitoral.
+								<p class="text-xs text-slate-400 mt-1 leading-relaxed italic">
+									*O voto simples tradicional de primeiro turno elege o candidato preferido. O eleitor escolhe apenas uma opção.*
 								</p>
 							</div>
 
@@ -321,14 +355,14 @@
 							</div>
 						</div>
 
-					<!-- PASSO 2: VOTO POR APROVAÇÃO (GRID CHECKBOX) -->
+					<!-- PASSO 2: VOTO POR APROVAÇÃO -->
 					{:else if step === 2}
-						<div class="flex flex-col gap-4">
+						<div in:fade={{ duration: 250 }} out:fade={{ duration: 150 }} class="flex flex-col gap-4">
 							<div>
 								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Voto por Aprovação</span>
 								<h2 class="text-xl md:text-2xl font-bold text-white mt-1">Marque quais são aceitáveis para você</h2>
-								<p class="text-xs text-slate-400 mt-1 leading-relaxed">
-									Selecione **quantos quiser** (de 0 a 12). Esse modelo busca identificar qual candidato é considerado aceitável pela maioria da população, atenuando divisões.
+								<p class="text-xs text-slate-400 mt-1 leading-relaxed italic">
+									*O Voto de Aprovação ajuda a encontrar candidatos de consenso. Marque quantos achar adequados.*
 								</p>
 							</div>
 
@@ -368,44 +402,97 @@
 							</div>
 						</div>
 
-					<!-- PASSO 3: RANKEAMENTO DE PREFERÊNCIAS (MECÂNICA SIMPLIFICADA DE 5 SLOTS) -->
+					<!-- PASSO 3: RANKEAMENTO DE PREFERÊNCIAS (TAP-TO-RANK PODIUM DO TOP 3) -->
 					{:else if step === 3}
-						<div class="flex flex-col gap-4">
-							<div>
-								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Ordem Preferencial</span>
-								<h2 class="text-xl md:text-2xl font-bold text-white mt-1">Escolha suas 5 primeiras opções</h2>
-								<p class="text-xs text-slate-400 mt-1 leading-relaxed">
-									Para evitar fadiga, ordene apenas seus **candidatos favoritos (1º ao 5º lugar)**. Clique no candidato abaixo para preencher o próximo slot. Candidatos não listados serão considerados empatados em último lugar.
-								</p>
+						<div in:fade={{ duration: 250 }} out:fade={{ duration: 150 }} class="flex flex-col gap-4">
+							<div class="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2">
+								<div>
+									<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Ordem Preferencial</span>
+									<h2 class="text-xl md:text-2xl font-bold text-white mt-1">Selecione seu pódio (Top 3)</h2>
+									<p class="text-xs text-slate-400 mt-1 leading-relaxed italic">
+										*O voto preferencial ranqueado avalia as transferências de votos (Voto Alternativo/IRV) e os duelos par a par (Condorcet). Escolha seu pódio Top 3.*
+									</p>
+								</div>
+								{#if slotsRank.some(id => id !== null)}
+									<button 
+										type="button" 
+										onclick={avancar}
+										class="py-2 px-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors shrink-0 self-start sm:self-auto"
+									>
+										Avançar (Pular resto) ➔
+									</button>
+								{/if}
 							</div>
 
-							<!-- 5 Slots de Preferência -->
-							<div class="grid grid-cols-5 gap-3 bg-slate-950/60 p-4 border border-slate-800 rounded-3xl mt-2">
-								{#each slotsRank as candidateId, idx}
-									{@const cand = CANDIDATOS.find(c => c.id === candidateId)}
-									{#if cand}
-										<button 
-											type="button" 
-											onclick={() => limparSlot(idx)}
-											class="flex flex-col items-center justify-between p-2 bg-slate-900 border border-slate-800 hover:border-red-500/50 rounded-2xl relative group transition-colors select-none"
-										>
-											<span class="text-4xs font-bold text-slate-500 absolute top-1 left-1.5">{idx + 1}º</span>
-											<div class="w-10 h-10 rounded-full overflow-hidden border border-slate-800 mt-2">
-												<img src="/{cand.imagem}" alt={cand.nome} class="w-full h-full object-cover" />
+							<!-- Pódio Visual Gamificado -->
+							<div class="flex items-end justify-center gap-4 bg-slate-950/40 p-6 border border-slate-800 rounded-3xl mt-2 min-h-48 relative overflow-hidden">
+								
+								<!-- 2º Lugar (Silver) -->
+								<div class="flex flex-col items-center w-24 sm:w-28">
+									{#if obterCandidatoRank(1)}
+										{@const cand2 = obterCandidatoRank(1)}
+										<button type="button" onclick={() => limparSlot(1)} class="group flex flex-col items-center select-none animate-scaleIn focus:outline-none">
+											<div class="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-400 relative shadow-lg group-hover:border-red-500 transition-colors">
+												<img src="/{cand2.imagem}" alt={cand2.nome} class="w-full h-full object-cover" />
 											</div>
-											<span class="text-4xs text-slate-350 mt-1.5 truncate w-full text-center font-bold">{cand.nome.split(' ')[0]}</span>
-											<span class="text-5xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity font-semibold uppercase mt-0.5">Remover</span>
+											<span class="text-5xs text-slate-300 font-bold mt-1 text-center truncate w-full px-1">{cand2.nome.split(' ')[0]}</span>
+											<span class="text-6xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase">Limpar</span>
 										</button>
 									{:else}
-										<div class="flex flex-col items-center justify-center p-2.5 bg-slate-950/60 border border-dashed border-slate-800/80 rounded-2xl h-24 text-center">
-											<span class="text-4xs font-extrabold text-slate-600 block">{idx + 1}ª escolha</span>
-											<span class="text-5xs text-slate-600 italic mt-1 leading-tight">Vazio</span>
+										<div class="w-12 h-12 rounded-full border border-dashed border-slate-800 bg-slate-900/50 flex items-center justify-center text-slate-600 text-sm">
+											🥈
 										</div>
 									{/if}
-								{/each}
+									<div class="w-full h-10 bg-slate-800/80 border border-slate-750 rounded-t-xl flex items-center justify-center font-black text-slate-400 text-2xs mt-2 shadow-inner uppercase tracking-wider">
+										2º
+									</div>
+								</div>
+
+								<!-- 1º Lugar (Gold - Destaque Central) -->
+								<div class="flex flex-col items-center w-24 sm:w-28">
+									{#if obterCandidatoRank(0)}
+										{@const cand1 = obterCandidatoRank(0)}
+										<button type="button" onclick={() => limparSlot(0)} class="group flex flex-col items-center select-none animate-scaleIn focus:outline-none">
+											<div class="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-400 relative shadow-xl group-hover:border-red-500 transition-colors">
+												<img src="/{cand1.imagem}" alt={cand1.nome} class="w-full h-full object-cover" />
+											</div>
+											<span class="text-5xs text-amber-400 font-bold mt-1 text-center truncate w-full px-1">{cand1.nome.split(' ')[0]}</span>
+											<span class="text-6xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase font-sans">Limpar</span>
+										</button>
+									{:else}
+										<div class="w-16 h-16 rounded-full border border-dashed border-slate-800 bg-slate-900/50 flex items-center justify-center text-slate-600 text-lg">
+											👑
+										</div>
+									{/if}
+									<div class="w-full h-16 bg-amber-500/10 border border-amber-500/20 rounded-t-xl flex items-center justify-center font-black text-amber-400 text-xs mt-2 shadow-inner uppercase tracking-wider">
+										1º
+									</div>
+								</div>
+
+								<!-- 3º Lugar (Bronze) -->
+								<div class="flex flex-col items-center w-24 sm:w-28">
+									{#if obterCandidatoRank(2)}
+										{@const cand3 = obterCandidatoRank(2)}
+										<button type="button" onclick={() => limparSlot(2)} class="group flex flex-col items-center select-none animate-scaleIn focus:outline-none">
+											<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-700 relative shadow-lg group-hover:border-red-500 transition-colors">
+												<img src="/{cand3.imagem}" alt={cand3.nome} class="w-full h-full object-cover" />
+											</div>
+											<span class="text-5xs text-slate-300 font-bold mt-1 text-center truncate w-full px-1">{cand3.nome.split(' ')[0]}</span>
+											<span class="text-6xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase">Limpar</span>
+										</button>
+									{:else}
+										<div class="w-10 h-10 rounded-full border border-dashed border-slate-800 bg-slate-900/50 flex items-center justify-center text-slate-600 text-sm">
+											🥉
+										</div>
+									{/if}
+									<div class="w-full h-8 bg-slate-800/80 border border-slate-750 rounded-t-xl flex items-center justify-center font-black text-amber-700 text-2xs mt-2 shadow-inner uppercase tracking-wider">
+										3º
+									</div>
+								</div>
+
 							</div>
 
-							<!-- Grid de 12 Candidatos para Atribuição -->
+							<!-- Grid de 12 Candidatos para Atribuição no Pódio (Tap-to-Rank) -->
 							<div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 mt-2">
 								{#each CANDIDATOS as c}
 									{@const rankIndex = slotsRank.indexOf(c.id)}
@@ -415,7 +502,7 @@
 										type="button" 
 										onclick={() => alternarSelecaoRank(c.id)}
 										class="group flex flex-col p-1.5 bg-slate-950/40 border rounded-2xl text-left hover:bg-slate-950 transition-all select-none relative overflow-hidden
-										       {active ? 'border-2' : 'border'} {estilos.fallbackBorder}"
+										       {active ? 'border-2 animate-pulseFast' : 'border'} {estilos.fallbackBorder}"
 										style={active ? estilos.ringStyle : estilos.borderStyle}
 									>
 										<!-- Foto -->
@@ -427,8 +514,8 @@
 												       {active ? 'grayscale-0 saturate-100 contrast-100' : 'contrast-125 saturate-50 grayscale-[30%] group-hover:grayscale-0'}"
 											/>
 											{#if active}
-												<div class="absolute inset-0 bg-indigo-600/30 flex items-center justify-center backdrop-blur-3xs font-extrabold text-white text-sm">
-													{rankIndex + 1}º
+												<div class="absolute inset-0 bg-indigo-600/30 flex items-center justify-center backdrop-blur-3xs font-extrabold text-white text-xs">
+													{rankIndex === 0 ? '🥇 1º' : rankIndex === 1 ? '🥈 2º' : '🥉 3º'}
 												</div>
 											{/if}
 										</div>
@@ -439,14 +526,14 @@
 							</div>
 						</div>
 
-					<!-- PASSO 4: VOTO POR NOTA (GRID SLIDER OU PONTOS) -->
+					<!-- PASSO 4: VOTO POR NOTA -->
 					{:else if step === 4}
-						<div class="flex flex-col gap-4">
+						<div in:fade={{ duration: 250 }} out:fade={{ duration: 150 }} class="flex flex-col gap-4">
 							<div>
 								<span class="text-2xs font-extrabold text-indigo-400 uppercase tracking-widest">Avaliação Cardinal</span>
 								<h2 class="text-xl md:text-2xl font-bold text-white mt-1">Atribua uma nota de 0 a 5</h2>
-								<p class="text-xs text-slate-400 mt-1 leading-relaxed">
-									Avalie cada candidato individualmente. Notas de 0 (rejeição total) a 5 (apoio absoluto). A nota padrão é 0. Utilizado no **STAR Voting** e **Voto por Notas**.
+								<p class="text-xs text-slate-400 mt-1 leading-relaxed italic">
+									*O voto cardinal por notas avalia a intensidade do apoio a cada candidato (STAR e Score Voting). Atribua uma avaliação de 0 a 5.*
 								</p>
 							</div>
 
