@@ -48,5 +48,3 @@ Em ambiente de desenvolvimento, você pode simular a carga inicial de 5.000 voto
 * **Sem Vínculos Políticos:** Este projeto possui caráter estritamente acadêmico, científico e informativo. Não possui qualquer tipo de financiamento, apoio, parceria ou participação de nenhum partido político, coligação, candidato ou entidade governamental.
 * **Objetivo de Estudo:** A ferramenta serve exclusivamente como objeto de estudo de modelos de votação alternativos no campo da ciência política e teoria da escolha social.
 * **Direitos Autorais e Imagens:** Todas as imagens, fotografias dos candidatos e informações biográficas utilizadas nesta aplicação foram obtidas de fontes públicas de comunicação ou bancos de dados institucionais. Elas são utilizadas sob os termos de licenças de uso comum e livre distribuição (como *Creative Commons* ou domínio público), destinadas exclusivamente à identificação visual dos nomes citados na simulação acadêmica.
-
-```
